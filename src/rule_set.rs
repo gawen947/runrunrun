@@ -226,7 +226,7 @@ impl Rule {
         };
 
         // replace with the matched input
-        let action = action.replace("%s", &format!("{:?}", input));
+        let action = action.replace("%s", &shlex::quote(input));
 
         Self { action, ..self }
     }
@@ -237,7 +237,7 @@ impl Rule {
 
         for (i, capture) in captures.iter().enumerate() {
             let tag = format!("%{}", i + 1); // %1, %2, %3, ...
-            result = result.replace(&tag, &format!("{:?}", capture))
+            result = result.replace(&tag, &shlex::quote(capture))
         }
 
         Self {
