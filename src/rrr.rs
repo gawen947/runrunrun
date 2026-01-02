@@ -194,6 +194,7 @@ fn parse_string(target: Pair<Rule>) -> Result<String> {
         Rule::space_string | Rule::nospace_string => Ok(target.as_str().to_string()),
         // todo: replace that with a native implementation,
         // not sure there is no side case with that, and it adds a dependency to serde_json
+        // maybe use shlex instead?
         Rule::quoted_string => serde_json::from_str(target.as_str())
             .map_err(|_| anyhow!("Invalid quoted string '{}'", target)),
         _ => unreachable!(),

@@ -59,7 +59,7 @@ struct Args {
     inputs: Vec<String>,
 }
 
-fn r#match(args: &Args, rrr: &Rrr, input: &str) -> Result<()> {
+fn r#match(args: &Args, sh: &Option<Vec<&str>>, rrr: &Rrr, input: &str) -> Result<()> {
     if let Some(rule) = rrr.profile(&args.profile)?.r#match(input) {
         debug!("matched rule for '{}': {:?}", input, rule);
         let rule = rule
@@ -75,7 +75,7 @@ fn r#match(args: &Args, rrr: &Rrr, input: &str) -> Result<()> {
                     if args.fork { "fork-exec" } else { "exec" },
                     rule.action
                 );
-                rule.exec(args.fork)
+                rule.exec(args.fork, sh)
                     .with_context(|| format!("executing '{}'", rule.action))?;
             }
         }
@@ -135,19 +135,28 @@ fn try_main() -> Result<()> {
         }
     }
 
-    // match the inputs
+    // some preparation for the execution
     let rrr = builder.build()?;
+    // live and let (the Vec<&str>) live
+    let sh = args
+        .sh
+        .as_ref()
+        .map(|s| shlex::split(&s).context("invalid SH substitute"))
+        .transpose()?;
+    let sh_str: Option<Vec<&str>> = sh.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+
+    // match the inputs
     if args.stdin {
         debug!("process inputs from stdin");
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
             let input = line.context("reading from stdin")?;
-            r#match(&args, &rrr, &input)?;
+            r#match(&args, &sh_str, &rrr, &input)?;
         }
     } else {
         debug!("process inputs from arguments");
         for input in &args.inputs {
-            r#match(&args, &rrr, input)?;
+            r#match(&args, &sh_str, &rrr, input)?;
         }
     }
 

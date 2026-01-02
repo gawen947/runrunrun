@@ -2,7 +2,7 @@ use std::{
     borrow::Cow, collections::HashMap, os::unix::process::CommandExt, path::Path, process::Command,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, ensure};
 use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 
@@ -282,10 +282,19 @@ impl Rule {
     }
 
     /// Execute the rule action as a shell command (only returns if there was an error)
-    pub fn exec(&self, fork: bool) -> Result<()> {
+    pub fn exec(&self, fork: bool, sh: &Option<Vec<&str>>) -> Result<()> {
         // todo: use type ! when not experimental anymore
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(&self.action);
+
+        let default_shell = vec!["sh", "-c"];
+        let shell = sh.as_ref().unwrap_or(&default_shell);
+
+        ensure!(
+            shell.len() > 0,
+            "provided shell should have at least one argument"
+        );
+
+        let mut cmd = Command::new(shell[0]);
+        cmd.args(&shell[1..]).arg(&self.action);
 
         if fork {
             Ok(cmd.spawn().map(|_| ())?)
