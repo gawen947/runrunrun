@@ -3,14 +3,15 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use globset::{Glob, GlobSet, GlobSetBuilder};
-use regex::{Regex, RegexSet};
+use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
+use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 
 use crate::types::{Action, AliasIdentifier, ProfileIdentifier};
 
 #[derive(Debug)]
 pub struct RuleSetBuilder {
     profile: ProfileIdentifier,
+    case_insensitive: bool,
 
     alias: HashMap<AliasIdentifier, Action>,
 
@@ -52,13 +53,15 @@ pub struct Rule {
     pub action: Action,
     pub origin: RuleOrigin,
     pub config_origin: ConfigOrigin,
+    pub case_insensitive: bool,
 }
 
 impl RuleSetBuilder {
-    pub fn new(profile: ProfileIdentifier) -> Self {
+    pub fn new(profile: ProfileIdentifier, case_insensitive: bool) -> Self {
         // todo: accept &ProfileIdentifier instead
         Self {
             profile,
+            case_insensitive,
             alias: HashMap::new(),
             regex_rules: vec![],
             glob_rules: vec![],
@@ -83,6 +86,7 @@ impl RuleSetBuilder {
             action,
             config_origin,
             origin: RuleOrigin::Config,
+            case_insensitive: self.case_insensitive,
         });
     }
 
@@ -110,6 +114,7 @@ impl RuleSetBuilder {
             action: action.to_string(),
             config_origin,
             origin: RuleOrigin::Alias(alias_identifier),
+            case_insensitive: self.case_insensitive,
         });
 
         Ok(())
@@ -137,11 +142,17 @@ impl RuleSetBuilder {
             .iter()
             .map(|r| r.pattern_as_str())
             .collect();
-        let regex_set = RegexSet::new(&regex_patterns)?;
+        let regex_set = RegexSetBuilder::new(&regex_patterns)
+            .case_insensitive(self.case_insensitive)
+            .build()?;
 
         let mut glob_set_builder = GlobSetBuilder::new();
         for rule in &self.glob_rules {
-            glob_set_builder.add(Glob::new(rule.pattern_as_str())?);
+            glob_set_builder.add(
+                GlobBuilder::new(rule.pattern_as_str())
+                    .case_insensitive(self.case_insensitive)
+                    .build()?,
+            );
         }
         let glob_set = glob_set_builder.build()?;
 
@@ -248,7 +259,9 @@ impl Rule {
         }
 
         // match capture groups of the regex
-        let re = Regex::new(self.pattern_as_str())?;
+        let re = RegexBuilder::new(self.pattern_as_str())
+            .case_insensitive(self.case_insensitive)
+            .build()?;
         let captures = re
             .captures(input)
             .ok_or_else(|| anyhow!("The rule should already match in order to capture"))?;

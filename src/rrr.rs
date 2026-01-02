@@ -16,6 +16,7 @@ use crate::{
 pub struct RrrBuilder {
     profiles: HashMap<ProfileIdentifier, RuleSetBuilder>,
     current_profile: ProfileIdentifier,
+    case_insensitive: bool,
 }
 
 pub struct Rrr {
@@ -39,18 +40,19 @@ impl Rrr {
 }
 
 impl RrrBuilder {
-    pub fn new() -> Self {
+    pub fn new(case_insensitive: bool) -> Self {
         /* todo: add a `only_profile: Option<ProfileIdentifier>` to only take into account the
            given profile (useful to only parse part of complex configurations).
         */
 
         let profiles = HashMap::from([(
             "default".to_string(),
-            RuleSetBuilder::new("default".to_string()),
+            RuleSetBuilder::new("default".to_string(), case_insensitive),
         )]);
         Self {
             profiles,
             current_profile: "default".to_string(),
+            case_insensitive,
         }
     }
 
@@ -125,7 +127,10 @@ impl RrrBuilder {
         let target = parse_string(target)?;
         self.profiles
             .entry(target.clone())
-            .or_insert(RuleSetBuilder::new(target.to_string()));
+            .or_insert(RuleSetBuilder::new(
+                target.to_string(),
+                self.case_insensitive,
+            ));
         self.current_profile = target;
         Ok(self)
     }
