@@ -6,7 +6,10 @@ use anyhow::{Result, anyhow, ensure};
 use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 
-use crate::types::{Action, AliasIdentifier, ProfileIdentifier};
+use crate::{
+    types::{Action, AliasIdentifier, ProfileIdentifier},
+    utils,
+};
 
 #[derive(Debug)]
 pub struct RuleSetBuilder {
@@ -226,7 +229,7 @@ impl Rule {
         };
 
         // replace with the matched input
-        let action = action.replace("%s", &shlex::quote(input));
+        let action = action.replace("%s", &utils::quote(input));
 
         Self { action, ..self }
     }
@@ -237,7 +240,7 @@ impl Rule {
 
         for (i, capture) in captures.iter().enumerate() {
             let tag = format!("%{}", i + 1); // %1, %2, %3, ...
-            result = result.replace(&tag, &shlex::quote(capture))
+            result = result.replace(&tag, &utils::quote(capture))
         }
 
         Self {
