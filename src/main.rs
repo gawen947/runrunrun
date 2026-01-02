@@ -75,7 +75,7 @@ fn r#match(args: &Args, rrr: &Rrr, input: &str) -> Result<()> {
                     if args.fork { "fork-exec" } else { "exec" },
                     rule.action
                 );
-                rule.exec()
+                rule.exec(args.fork)
                     .with_context(|| format!("executing '{}'", rule.action))?;
             }
         }

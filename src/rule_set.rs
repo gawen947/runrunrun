@@ -282,11 +282,16 @@ impl Rule {
     }
 
     /// Execute the rule action as a shell command (only returns if there was an error)
-    pub fn exec(&self) -> Result<()> {
+    pub fn exec(&self, fork: bool) -> Result<()> {
         // todo: use type ! when not experimental anymore
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(&self.action);
-        Err(cmd.exec())?
+
+        if fork {
+            Ok(cmd.spawn().map(|_| ())?)
+        } else {
+            Err(cmd.exec())?
+        }
     }
 }
 
