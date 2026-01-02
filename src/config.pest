@@ -1,0 +1,54 @@
+COMMENT    = _{ "#" ~ any_but_newline* }
+WHITESPACE = _{ " " | "\t" }
+
+file = {
+    SOI ~ ((line? ~ NEWLINE) | line)* ~ EOI
+}
+line = { meta | alias | invalid | match }
+
+meta = {
+    include
+  | import
+  | profile
+}
+
+include = {
+    ":include" ~ eol_string
+}
+import  = {
+    ":import" ~ eol_string
+}
+profile = {
+    ":profile" ~ eol_string
+}
+
+alias = {
+    alias_identifier ~ eol_string
+}
+
+alias_identifier = @{
+    "[" ~ (ASCII_ALPHANUMERIC | "-" | "_")+ ~ "]"
+}
+
+match = {
+    (regex_match | glob_match) ~ (alias_identifier | invalid_alias | eol_string)
+}
+
+regex_match = ${ "~" ~ sol_string }
+glob_match  =  { sol_string }
+
+// avoid confusion with glob match
+invalid       = { invalid_meta | invalid_alias }
+invalid_meta  = { ":" ~ any_but_newline* }
+invalid_alias = { "[" ~ any_but_newline* }
+
+// string can be without whitespace or need to be quoted and escaped
+sol_string     = _{ quoted_string | nospace_string }
+eol_string     = _{ quoted_string | space_string }
+space_string   = @{ nospace_char ~ any_but_newline+ }
+nospace_string = @{ nospace_char+ }
+quoted_string  = @{ "\"" ~ noquote_char+ ~ "\"" }
+
+any_but_newline = _{ !NEWLINE ~ ANY }
+noquote_char    = _{ !("\"" | NEWLINE) ~ ANY }
+nospace_char    = _{ !(WHITESPACE | NEWLINE) ~ ANY }

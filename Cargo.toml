@@ -1,0 +1,33 @@
+[package]
+name = "runrunrun"
+description = "A file and URL opener that runs the right thing"
+readme = "README.md"
+authors = ["David Hauweele <david@hauweele.net>"]
+version = "0.1.0"
+license = "BSD-3-Clause"
+repository = "git@github.com:gawen947/runrunrun.git"
+edition = "2024"
+
+[[bin]]
+name = "rrr"
+path = "src/main.rs"
+required-features = ["binary"]
+
+[profile.release]
+strip = true
+lto = true
+
+[features]
+deafult = ["binary"]
+binary = ["dep:clap"]
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.52", features = ["cargo", "derive", "env"], optional = true }
+globset = "0.4.18"
+log = "0.4.28"
+pest = "2.8.3"
+pest_derive = "2.8.4"
+regex = "1.12.2"
+serde_json = "1.0.148"
+stderrlog = "0.6.0"
