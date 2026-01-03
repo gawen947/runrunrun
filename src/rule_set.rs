@@ -207,10 +207,10 @@ impl RuleSet {
 
     /// Return the first glob or regex rule that matches the input.
     pub fn r#match(&self, input: &str) -> Option<Rule> {
-        if let r @ Some(_) = self.match_glob(input) {
+        if let r @ Some(_) = self.match_regex(input) {
             return r;
         }
-        if let r @ Some(_) = self.match_regex(input) {
+        if let r @ Some(_) = self.match_glob(input) {
             return r;
         }
         None
@@ -291,8 +291,6 @@ impl Rule {
 
     /// Execute the rule action as a shell command (only returns if there was an error)
     pub fn exec(&self, fork: bool, sh: &Option<Vec<&str>>) -> Result<()> {
-        // todo: use type ! when not experimental anymore
-
         let default_shell = vec!["sh", "-c"];
         let shell = sh.as_ref().unwrap_or(&default_shell);
 
