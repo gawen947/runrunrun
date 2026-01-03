@@ -5,7 +5,7 @@ use std::{
     process::exit,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use log::{debug, error, info, warn};
 use runrunrun::rrr::{Rrr, RrrBuilder};
@@ -59,7 +59,7 @@ struct Args {
     inputs: Vec<String>,
 }
 
-fn r#match(args: &Args, sh: &Option<Vec<&str>>, rrr: &Rrr, input: &str) -> Result<()> {
+fn process_input(args: &Args, sh: &Option<Vec<&str>>, rrr: &Rrr, input: &str) -> Result<()> {
     if let Some(rule) = rrr.profile(&args.profile)?.r#match(input) {
         debug!("matched rule for '{}': {:?}", input, rule);
         let rule = rule
@@ -116,13 +116,17 @@ fn try_main() -> Result<()> {
         let home_dir = env::var("HOME").context("cannot read HOME env")?;
         let home_config_path = Path::new(&home_dir).join(".config").join("rrr.conf");
 
-        debug!("loading config '{}'", main_config_path.display());
-        builder = builder.config(&main_config_path).with_context(|| {
-            format!(
-                "cannot load configuration file '{}'",
-                main_config_path.display()
-            )
-        })?;
+        let mut config_loaded = false;
+        if main_config_path.is_file() {
+            debug!("loading config '{}'", main_config_path.display());
+            builder = builder.config(&main_config_path).with_context(|| {
+                format!(
+                    "cannot load configuration file '{}'",
+                    main_config_path.display()
+                )
+            })?;
+            config_loaded = true;
+        }
 
         if home_config_path.is_file() {
             debug!("loading config '{}'", home_config_path.display());
@@ -132,7 +136,15 @@ fn try_main() -> Result<()> {
                     home_config_path.display()
                 )
             })?;
+            config_loaded = true;
         }
+
+        ensure!(
+            config_loaded,
+            "none of the configuration files '{}' nor '{}' could be loaded",
+            main_config_path.display(),
+            home_config_path.display()
+        );
     }
 
     // some preparation for the execution
@@ -151,12 +163,12 @@ fn try_main() -> Result<()> {
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
             let input = line.context("reading from stdin")?;
-            r#match(&args, &sh_str, &rrr, &input)?;
+            process_input(&args, &sh_str, &rrr, &input)?;
         }
     } else {
         debug!("process inputs from arguments");
         for input in &args.inputs {
-            r#match(&args, &sh_str, &rrr, input)?;
+            process_input(&args, &sh_str, &rrr, input)?;
         }
     }
 
