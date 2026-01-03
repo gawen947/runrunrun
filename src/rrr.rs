@@ -57,10 +57,7 @@ impl RrrBuilder {
         }
     }
 
-    /**
-    Parse a config file.
-    If there are include or import in the config, they will be loaded automatically.
-    */
+    // Parse a config file. Include are loaded recursively.
     pub fn config(mut self, file_path: &Path) -> Result<Self> {
         let input = fs::read_to_string(file_path)?;
         let file = ConfigParser::parse(Rule::file, &input)?.next().unwrap();
@@ -112,9 +109,26 @@ impl RrrBuilder {
         }
     }
 
-    fn parse_meta_include(self, file: &Path, target: Pair<Rule>) -> Result<Self> {
+    fn parse_meta_include(mut self, file: &Path, target: Pair<Rule>) -> Result<Self> {
         let target = parse_string(target)?;
-        self.config(Path::new(&target))
+        let path = Path::new(&target);
+        self.parse_meta_include_rec(file, path)
+    }
+
+    fn parse_meta_include_rec(mut self, orig_config_file: &Path, target_path: &Path) -> Result<Self> {
+        let metadata = target_path.metadata()?;
+
+        if metadata.is_file() {
+            self = self.config(target_path)?;
+        } else if metadata.is_dir() {
+            if let Ok(entries) = fs::read_dir(target_path) {
+                for entry in entries.flatten() {
+                    self = self.parse_meta_include_rec(orig_config_file, &entry.path())?;
+                }
+            }
+        }
+
+        Ok(self)
     }
 
     fn parse_meta_import(self, file: &Path, target: Pair<Rule>) -> Result<Self> {
