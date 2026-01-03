@@ -18,6 +18,7 @@ pub struct RuleSetBuilder {
 
     alias: HashMap<AliasIdentifier, Action>,
 
+    // fixme: this should be called regex_pattern and glob_pattern
     regex_rules: Vec<Rule>,
     glob_rules: Vec<Rule>,
 }
@@ -139,7 +140,11 @@ impl RuleSetBuilder {
         }
     }
 
-    pub fn build(self) -> Result<RuleSet> {
+    pub fn build(mut self) -> Result<RuleSet> {
+        // reverse the patterns to match the last one first
+        self.regex_rules.reverse();
+        self.glob_rules.reverse();
+
         let regex_patterns: Vec<&str> = self
             .regex_rules
             .iter()
