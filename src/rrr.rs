@@ -73,7 +73,7 @@ impl RrrBuilder {
         Ok(self)
     }
 
-    fn parse_line(mut self, file: &Path, line: Pair<Rule>) -> Result<Self> {
+    fn parse_line(self, file: &Path, line: Pair<Rule>) -> Result<Self> {
         let inner = line.into_inner().next().unwrap(); // meta, alias, invalid, match
         match inner.as_rule() {
             Rule::meta => {
@@ -112,12 +112,12 @@ impl RrrBuilder {
         }
     }
 
-    fn parse_meta_include(mut self, file: &Path, target: Pair<Rule>) -> Result<Self> {
+    fn parse_meta_include(self, file: &Path, target: Pair<Rule>) -> Result<Self> {
         let target = parse_string(target)?;
         self.config(Path::new(&target))
     }
 
-    fn parse_meta_import(mut self, file: &Path, target: Pair<Rule>) -> Result<Self> {
+    fn parse_meta_import(self, file: &Path, target: Pair<Rule>) -> Result<Self> {
         // todo: check if it's a directory or a file
         // if file => rrs.rule_with_import()
         // if dir => recursively go over each file and rrs.rule_with_import()

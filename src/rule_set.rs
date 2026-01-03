@@ -3,8 +3,8 @@ use std::{
 };
 
 use anyhow::{Result, anyhow, ensure};
-use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
-use regex::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+use regex::{RegexBuilder, RegexSet, RegexSetBuilder};
 
 use crate::{
     types::{Action, AliasIdentifier, ProfileIdentifier},
