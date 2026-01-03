@@ -47,8 +47,9 @@ sol_string     = _{ quoted_string | nospace_string }
 eol_string     = _{ quoted_string | space_string }
 space_string   = @{ nospace_char ~ any_but_newline+ }
 nospace_string = @{ nospace_char+ }
-quoted_string  = @{ "\"" ~ noquote_char+ ~ "\"" }
+quoted_string  = @{ "\"" ~ (escaped_quote_char | noquote_char)+ ~ "\"" }
 
-any_but_newline = _{ !NEWLINE ~ ANY }
-noquote_char    = _{ !("\"" | NEWLINE) ~ ANY }
-nospace_char    = _{ !(WHITESPACE | NEWLINE) ~ ANY }
+any_but_newline    = _{ !NEWLINE ~ ANY }
+noquote_char       = _{ !("\"" | NEWLINE) ~ ANY }
+nospace_char       = _{ !(WHITESPACE | NEWLINE) ~ ANY }
+escaped_quote_char = _{ "\\\"" }
