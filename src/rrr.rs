@@ -193,9 +193,6 @@ impl RrrBuilder {
 fn parse_string(target: Pair<Rule>) -> Result<String> {
     match target.as_rule() {
         Rule::space_string | Rule::nospace_string => Ok(target.as_str().to_string()),
-        // todo: replace that with a native implementation,
-        // not sure there is no side case with that, and it adds a dependency to serde_json
-        // maybe use shlex instead?
         Rule::quoted_string => utils::unquote(target.as_str()),
         _ => unreachable!(),
     }
