@@ -11,19 +11,16 @@ edition = "2024"
 [[bin]]
 name = "rrr"
 path = "src/main.rs"
-required-features = ["binary"]
 
 [profile.release]
 strip = true
 lto = true
 
 [features]
-deafult = ["binary"]
-binary = ["dep:clap"]
 
 [dependencies]
 anyhow = "1.0.100"
-clap = { version = "4.5.52", features = ["cargo", "derive", "env"], optional = true }
+clap = { version = "4.5.52", features = ["cargo", "derive", "env"] }
 globset = "0.4.18"
 log = "0.4.28"
 pest = "2.8.3"
