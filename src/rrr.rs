@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs, path::Path};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 
 use pest::{
     Parser,
@@ -11,7 +11,7 @@ use pest_derive::Parser;
 use crate::{
     rule_set::{ConfigOrigin, Pattern, RuleSet, RuleSetBuilder},
     types::ProfileIdentifier,
-    utils,
+    utils::{self, expand},
 };
 
 pub struct RrrBuilder {
@@ -111,15 +111,20 @@ impl RrrBuilder {
 
     fn parse_meta_include(mut self, file: &Path, target: Pair<Rule>) -> Result<Self> {
         let target = parse_string(target)?;
-        let path = Path::new(&target);
-        self.parse_meta_include_rec(file, path)
+        let path = expand(&target)?;
+        self.parse_meta_include_rec(file, &path)
     }
 
-    fn parse_meta_include_rec(mut self, orig_config_file: &Path, target_path: &Path) -> Result<Self> {
-        let metadata = target_path.metadata()?;
+    fn parse_meta_include_rec(
+        mut self,
+        orig_config_file: &Path,
+        target_path: &Path,
+    ) -> Result<Self> {
+        let context = || format!("including '{}'", target_path.display());
 
+        let metadata = target_path.metadata().with_context(context)?;
         if metadata.is_file() {
-            self = self.config(target_path)?;
+            self = self.config(target_path).with_context(context)?;
         } else if metadata.is_dir() {
             if let Ok(entries) = fs::read_dir(target_path) {
                 for entry in entries.flatten() {
