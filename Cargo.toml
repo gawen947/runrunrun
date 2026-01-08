@@ -1,6 +1,6 @@
 [package]
 name = "runrunrun"
-description = "A file and URL opener that runs the right thing"
+description = "A file and URI opener that runs the right thing"
 readme = "README.md"
 authors = ["David Hauweele <david@hauweele.net>"]
 version = "0.1.0"

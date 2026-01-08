@@ -1,18 +1,18 @@
 # runrunrun
 
-**A file and URL opener that runs the right thing.**
+**A file and URI opener that runs the right thing.**
 
 ## Why runrunrun?
 
 Traditional desktop file openers like `xdg-open` often make assumptions about your preferences, choosing browsers and applications based on your desktop environment rather than your actual needs. With `.desktop` files scattered across numerous locations, it's nearly impossible to get a clear view of what opens what. You'd need to manually inspect each file to understand the associations, and every desktop environment tries to override your preferences with its own.
 
-`runrunrun` (or `rrr` for short) takes a different approach: simple file and URL handling through explicit configuration.
+`runrunrun` (or `rrr` for short) takes a different approach: simple file and URI handling through explicit configuration.
 
 ## Philosophy
 
-The core philosophy of `runrunrun` is that opening files and URLs should be straightforward and transparent. No guessing what your preferred browser might be based on your desktop environment. No complex cascade of MIME types, desktop files, and environment-specific overrides. Just simple patterns that match files and URLs to the programs you want.
+The core philosophy of `runrunrun` is that opening files and URIs should be straightforward and transparent. No guessing what your preferred browser might be based on your desktop environment. No complex cascade of MIME types, desktop files, and environment-specific overrides. Just simple patterns that match files and URIs to the programs you want.
 
-The same user might need different applications in different situations. Profiles address this need. Overrides are easy and predictable through simple rule ordering. File extensions and URL schemes provide the information needed to select the right application. Unlike desktop-centric tools, `rrr` also works in terminal environments. This makes it suitable for servers and minimal setups where simplicity matters more than desktop integration.
+The same user might need different applications in different situations. Profiles address this need. Overrides are easy and predictable through simple rule ordering. File extensions and URI schemes provide the information needed to select the right application. Unlike desktop-centric tools, `rrr` also works in terminal environments. This makes it suitable for servers and minimal setups where simplicity matters more than desktop integration.
 
 ## Core Concepts
 
@@ -25,7 +25,7 @@ Match files by extension to applications:
 *.ogg    audacious
 ```
 
-Match URL schemes:
+Match URI schemes:
 ```
 https://*    firefox
 mailto:*     thunderbird
@@ -90,7 +90,7 @@ The `:import` directive will allow importing desktop files. It will extract MIME
 # Open a file
 rrr document.pdf
 
-# Open a URL
+# Open a URI
 rrr https://example.com
 
 # Query what would run
