@@ -1,4 +1,5 @@
 use std::{
+    cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
@@ -20,7 +21,7 @@ use crate::{
 
 pub struct RrrBuilder {
     loaded_config_files: HashSet<PathBuf>,
-    profiles: HashMap<ProfileIdentifier, RuleSetBuilder>,
+    profiles: RefCell<HashMap<ProfileIdentifier, RuleSetBuilder>>,
     current_profile: ProfileIdentifier,
     case_insensitive: bool,
     only_profiles: Option<Vec<String>>,
@@ -57,10 +58,10 @@ impl RrrBuilder {
         profiles outside this list will be ignored. Specifying `None` here will load all profiles.
     */
     pub fn new(case_insensitive: bool, only_profiles: Option<Vec<String>>) -> Self {
-        let profiles = HashMap::from([(
+        let profiles = RefCell::new(HashMap::from([(
             "default".to_string(),
             RuleSetBuilder::new("default".to_string(), case_insensitive),
-        )]);
+        )]));
         Self {
             profiles,
             current_profile: "default".to_string(),
@@ -104,7 +105,7 @@ impl RrrBuilder {
                 let target = meta.clone().into_inner().next().unwrap();
                 match meta.as_rule() {
                     Rule::include => self.parse_meta_include(file, target),
-                    Rule::import => self.parse_meta_import(file, target),
+                    Rule::import => self.parse_meta_import(file, meta, target),
                     Rule::profile => self.parse_meta_profile(file, target),
                     _ => unreachable!(),
                 }
@@ -161,20 +162,69 @@ impl RrrBuilder {
         Ok(self)
     }
 
+    #[cfg(not(feature = "import"))]
     fn parse_meta_import(self, file: &Path, target: Pair<Rule>) -> Result<Self> {
+        Err(anyhow!("not compiled with 'import' feature"))
+    }
+
+    #[cfg(feature = "import")]
+    fn parse_meta_import(
+        mut self,
+        config_file: &Path,
+        import: Pair<Rule>,
+        target: Pair<Rule>,
+    ) -> Result<Self> {
         if !self.is_profile_loadable() {
             return Ok(self);
         }
 
-        // todo: check if it's a directory or a file
-        // if file => rrs.rule_with_import()
-        // if dir => recursively go over each file and rrs.rule_with_import()
-        todo!()
+        let mut rule_set_builder = self.current_profile();
+        let config_origin = token_to_config_origin(config_file, &import);
+
+        let target = parse_string(target)?;
+        let path = expand(&target)?;
+        self.parse_meta_import_rec(&mut rule_set_builder, &config_origin, config_file, &path)?;
+        drop(rule_set_builder);
+
+        Ok(self)
+    }
+
+    #[cfg(feature = "import")]
+    fn parse_meta_import_rec(
+        &self,
+        rule_set_builder: &mut RefMut<'_, RuleSetBuilder>,
+        config_origin: &ConfigOrigin,
+        config_file: &Path,
+        target_path: &Path,
+    ) -> Result<()> {
+        let context = || format!("importing '{}'", target_path.display());
+
+        let metadata = target_path.metadata().with_context(context)?;
+        if metadata.is_file() && target_path.extension().and_then(|s| s.to_str()) == Some("desktop")
+        {
+            rule_set_builder
+                .rule_with_import(&config_origin, target_path, true)
+                .with_context(|| format!("importing '{}'", target_path.display()))?;
+        } else if metadata.is_dir() {
+            if let Ok(entries) = fs::read_dir(target_path) {
+                for entry in entries.flatten() {
+                    self.parse_meta_import_rec(
+                        rule_set_builder,
+                        config_origin,
+                        config_file,
+                        &entry.path(),
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn parse_meta_profile(mut self, file: &Path, target: Pair<Rule>) -> Result<Self> {
         let target = parse_string(target)?;
         self.profiles
+            .borrow_mut()
             .entry(target.clone())
             .or_insert(RuleSetBuilder::new(
                 target.to_string(),
@@ -194,10 +244,11 @@ impl RrrBuilder {
             return Ok(self);
         }
 
-        let rule_set_builder = self.current_profile();
+        let mut rule_set_builder = self.current_profile();
         let action = parse_string(target)?;
 
         rule_set_builder.alias(identifier.as_str().to_string(), action);
+        drop(rule_set_builder);
 
         Ok(self)
     }
@@ -207,7 +258,7 @@ impl RrrBuilder {
             return Ok(self);
         }
 
-        let rule_set_builder = self.current_profile();
+        let mut rule_set_builder = self.current_profile();
         let config_origin = token_to_config_origin(file, &r#match);
         let pattern = match_token_to_pattern(&r#match);
 
@@ -218,6 +269,7 @@ impl RrrBuilder {
             let action = parse_string(target)?;
             rule_set_builder.rule_with_action(config_origin, pattern, action);
         }
+        drop(rule_set_builder);
 
         Ok(self)
     }
@@ -231,15 +283,17 @@ impl RrrBuilder {
         }
     }
 
-    fn current_profile(&mut self) -> &mut RuleSetBuilder {
-        self.profiles
-            .get_mut(&self.current_profile)
-            .expect("Current profile should exist in the list of profiles")
+    fn current_profile(&self) -> RefMut<'_, RuleSetBuilder> {
+        RefMut::map(self.profiles.borrow_mut(), |m| {
+            m.get_mut(&self.current_profile)
+                .expect("Current profile should exist in the list of profiles")
+        })
     }
 
     pub fn build(self) -> Result<Rrr> {
         let rule_sets: Result<HashMap<ProfileIdentifier, RuleSet>> = self
             .profiles
+            .into_inner()
             .into_iter()
             .map(|(profile_identifier, rule_set_builder)| {
                 // Result<V> -> Result<(K, V)> otherwise we end up with (K, Result<V>)

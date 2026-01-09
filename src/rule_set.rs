@@ -124,13 +124,55 @@ impl RuleSetBuilder {
         Ok(())
     }
 
+    #[cfg(feature = "import")]
     /// Add a rule that comes from an imported desktop file.
     pub fn rule_with_import(
         &mut self,
-        config_origin: ConfigOrigin,
+        config_origin: &ConfigOrigin,
         imported_path: &Path,
+        ignore_missing_attrs: bool,
     ) -> Result<()> {
-        todo!()
+        use anyhow::Context;
+
+        let desktop_entry = freedesktop_entry_parser::parse_entry(imported_path)?;
+        let desktop_section = desktop_entry
+            .section("Desktop Entry")
+            .context("missing 'Desktop Entry' section")?;
+
+        let get_attr = |name: &str| -> Result<Option<&str>> {
+            match desktop_section.attr(name).get(0) {
+                Some(val) => Ok(Some(val)),
+                None if ignore_missing_attrs => Ok(None),
+                None => anyhow::bail!("missing '{}' attribute", name),
+            }
+        };
+
+        let Some(exec_cmd) = get_attr("Exec")?.map(|s| s.replace("%U", "%s")) else {
+            return Ok(());
+        };
+        let Some(mime_types) = get_attr("MimeType")?.map(|s| s.to_string()) else {
+            return Ok(());
+        };
+
+        for mime_type in mime_types.split(";").filter(|s| !s.is_empty()) {
+            if let Some(extensions) = mime_guess::get_mime_extensions_str(mime_type) {
+                for extension in extensions {
+                    let pattern = Pattern::Glob(format!("*.{}", extension));
+
+                    self.rule(Rule {
+                        pattern,
+                        action: exec_cmd.to_string(),
+                        config_origin: config_origin.clone(),
+                        origin: RuleOrigin::ImportedDesktop(
+                            imported_path.to_string_lossy().to_string(),
+                        ),
+                        case_insensitive: self.case_insensitive,
+                    })
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn rule(&mut self, rule: Rule) {
