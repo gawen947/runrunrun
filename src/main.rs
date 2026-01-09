@@ -99,7 +99,7 @@ fn try_main() -> Result<()> {
     debug!("log operational");
 
     // load configuration
-    let mut builder = RrrBuilder::new(!args.case_sensitive);
+    let mut builder = RrrBuilder::new(!args.case_sensitive, Some(vec![args.profile.to_string()]));
 
     if let Some(config_path) = &args.config {
         debug!("loading config '{}'", config_path.display());

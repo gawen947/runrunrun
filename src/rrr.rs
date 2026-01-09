@@ -23,6 +23,7 @@ pub struct RrrBuilder {
     profiles: HashMap<ProfileIdentifier, RuleSetBuilder>,
     current_profile: ProfileIdentifier,
     case_insensitive: bool,
+    only_profiles: Option<Vec<String>>,
 }
 
 pub struct Rrr {
@@ -46,11 +47,16 @@ impl Rrr {
 }
 
 impl RrrBuilder {
-    pub fn new(case_insensitive: bool) -> Self {
-        /* todo: add a `only_profile: Option<ProfileIdentifier>` to only take into account the
-           given profile (useful to only parse part of complex configurations).
-        */
+    /**
+    Create a RrrBuilder that can be used to load the configuration files and create a Rrr which can be used to match inputs.
 
+    # Arguments
+
+      * `case_insensitive` - Specify wether the match should be case sensitive or case insensitive.
+      * `only_profiles` - Optional list of profiles that should be loaded. Rules pertaining to
+        profiles outside this list will be ignored. Specifying `None` here will load all profiles.
+    */
+    pub fn new(case_insensitive: bool, only_profiles: Option<Vec<String>>) -> Self {
         let profiles = HashMap::from([(
             "default".to_string(),
             RuleSetBuilder::new("default".to_string(), case_insensitive),
@@ -60,10 +66,11 @@ impl RrrBuilder {
             current_profile: "default".to_string(),
             loaded_config_files: HashSet::new(),
             case_insensitive,
+            only_profiles,
         }
     }
 
-    // Parse a config file. Include are loaded recursively.
+    /// Parse a config file. Include are loaded recursively.
     pub fn config(mut self, file_path: &Path) -> Result<Self> {
         // ensure we always talk about the same absolute path
         let file_path = file_path.canonicalize()?;
@@ -155,6 +162,10 @@ impl RrrBuilder {
     }
 
     fn parse_meta_import(self, file: &Path, target: Pair<Rule>) -> Result<Self> {
+        if !self.is_profile_loadable() {
+            return Ok(self);
+        }
+
         // todo: check if it's a directory or a file
         // if file => rrs.rule_with_import()
         // if dir => recursively go over each file and rrs.rule_with_import()
@@ -179,6 +190,10 @@ impl RrrBuilder {
         identifier: Pair<Rule>,
         target: Pair<Rule>,
     ) -> Result<Self> {
+        if !self.is_profile_loadable() {
+            return Ok(self);
+        }
+
         let rule_set_builder = self.current_profile();
         let action = parse_string(target)?;
 
@@ -188,6 +203,10 @@ impl RrrBuilder {
     }
 
     fn parse_match(mut self, file: &Path, r#match: Pair<Rule>, target: Pair<Rule>) -> Result<Self> {
+        if !self.is_profile_loadable() {
+            return Ok(self);
+        }
+
         let rule_set_builder = self.current_profile();
         let config_origin = token_to_config_origin(file, &r#match);
         let pattern = match_token_to_pattern(&r#match);
@@ -201,6 +220,15 @@ impl RrrBuilder {
         }
 
         Ok(self)
+    }
+
+    /// Check if we should process the line according to only_profiles.
+    fn is_profile_loadable(&self) -> bool {
+        if let Some(only_profiles) = &self.only_profiles {
+            only_profiles.contains(&self.current_profile)
+        } else {
+            true
+        }
     }
 
     fn current_profile(&mut self) -> &mut RuleSetBuilder {
