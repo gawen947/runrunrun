@@ -80,9 +80,14 @@ Organize your configuration across multiple files with `:include`. This accepts 
 :include /etc/rrr.d/
 ```
 
-### Import (Future Version)
+### Import
 
-The `:import` directive will allow importing desktop files. It will extract MIME types from `.desktop` files and generate appropriate rules automatically. You'll be able to import files individually or scan directories recursively.
+The `:import` directive loads `.desktop` files and automatically generates matching glob patterns for their MIME types. It reads the `Exec` and `MimeTypes` attributes from each desktop entry, infers possible file extensions, and adds the corresponding rules. You can import individual files or entire directories recursively. Desktop files missing `Exec` or `MimeTypes` are skipped silently.
+
+```
+:import gimp.desktop
+:import /usr/local/share/applications
+```
 
 ## Usage
 
