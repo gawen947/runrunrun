@@ -1,12 +1,9 @@
 use anyhow::{Result, anyhow};
-use std::{
-    borrow::Cow,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, path::PathBuf};
 
 /// Add quotes around a string (if needed)
-pub(crate) fn quote(s: &str) -> Cow<'_, str> {
-    shlex::quote(s)
+pub(crate) fn quote(s: &str) -> Result<Cow<'_, str>> {
+    Ok(shlex::try_quote(s)?)
 }
 
 /// Remove the quotes from a string, e.g. "\"hello world\"" -> "hello world"

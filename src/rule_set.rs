@@ -267,7 +267,7 @@ impl Rule {
     }
 
     /// Substitute %s in the action with the input that we matched against
-    fn substitute_file(self, input: &str) -> Self {
+    fn substitute_file(self, input: &str) -> Result<Self> {
         // automatically append "%s" if not present
         let action = if self.action.contains("%s") {
             Cow::Borrowed(&self.action)
@@ -276,29 +276,29 @@ impl Rule {
         };
 
         // replace with the matched input
-        let action = action.replace("%s", &utils::quote(input));
+        let action = action.replace("%s", &utils::quote(input)?);
 
-        Self { action, ..self }
+        Ok(Self { action, ..self })
     }
 
     /// Substitute in the action the captures of the Regex with %1, %2, %3, ...
-    fn substitute_captures(self, captures: Vec<String>) -> Self {
+    fn substitute_captures(self, captures: Vec<String>) -> Result<Self> {
         let mut result = self.action.to_string();
 
         for (i, capture) in captures.iter().enumerate() {
             let tag = format!("%{}", i + 1); // %1, %2, %3, ...
-            result = result.replace(&tag, &utils::quote(capture))
+            result = result.replace(&tag, &utils::quote(capture)?)
         }
 
-        Self {
+        Ok(Self {
             action: result,
             ..self
-        }
+        })
     }
 
     /// Substitute in the action the input that we matched against and the captures of the Regex.
-    fn substitute(self, captures: Vec<String>, input: &str) -> Self {
-        self.substitute_captures(captures).substitute_file(input)
+    fn substitute(self, captures: Vec<String>, input: &str) -> Result<Self> {
+        Ok(self.substitute_captures(captures)?.substitute_file(input)?)
     }
 
     /// Cature the matched regex group into a vector.
@@ -328,7 +328,7 @@ impl Rule {
     /// Prepare the rule for execution with proper substitution against the matched file.
     pub fn prepare(self, input: &str) -> Result<Self> {
         let captures = self.captures(input)?;
-        Ok(self.substitute(captures, input))
+        Ok(self.substitute(captures, input)?)
     }
 
     /// Execute the rule action as a shell command (only returns if there was an error)

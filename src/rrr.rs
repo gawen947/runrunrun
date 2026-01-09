@@ -7,10 +7,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 
-use pest::{
-    Parser,
-    iterators::{Pair, Pairs},
-};
+use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
 
 use crate::{
@@ -135,7 +132,7 @@ impl RrrBuilder {
         }
     }
 
-    fn parse_meta_include(mut self, file: &Path, target: Pair<Rule>) -> Result<Self> {
+    fn parse_meta_include(self, file: &Path, target: Pair<Rule>) -> Result<Self> {
         let target = parse_string(target)?;
         let path = expand(&target)?;
         self.parse_meta_include_rec(file, &path)
@@ -169,7 +166,7 @@ impl RrrBuilder {
 
     #[cfg(feature = "import")]
     fn parse_meta_import(
-        mut self,
+        self,
         config_file: &Path,
         import: Pair<Rule>,
         target: Pair<Rule>,
@@ -221,7 +218,7 @@ impl RrrBuilder {
         Ok(())
     }
 
-    fn parse_meta_profile(mut self, file: &Path, target: Pair<Rule>) -> Result<Self> {
+    fn parse_meta_profile(mut self, _file: &Path, target: Pair<Rule>) -> Result<Self> {
         let target = parse_string(target)?;
         self.profiles
             .borrow_mut()
@@ -234,12 +231,7 @@ impl RrrBuilder {
         Ok(self)
     }
 
-    fn parse_alias(
-        mut self,
-        file: &Path,
-        identifier: Pair<Rule>,
-        target: Pair<Rule>,
-    ) -> Result<Self> {
+    fn parse_alias(self, _file: &Path, identifier: Pair<Rule>, target: Pair<Rule>) -> Result<Self> {
         if !self.is_profile_loadable() {
             return Ok(self);
         }
@@ -253,7 +245,7 @@ impl RrrBuilder {
         Ok(self)
     }
 
-    fn parse_match(mut self, file: &Path, r#match: Pair<Rule>, target: Pair<Rule>) -> Result<Self> {
+    fn parse_match(self, file: &Path, r#match: Pair<Rule>, target: Pair<Rule>) -> Result<Self> {
         if !self.is_profile_loadable() {
             return Ok(self);
         }
@@ -335,19 +327,6 @@ fn token_to_config_origin(file: &Path, r#match: &Pair<Rule>) -> ConfigOrigin {
         line,
         column,
     }
-}
-
-// todo: remove this method once the parser is OK
-fn debug_pair(pair: &Pair<Rule>) -> () {
-    println!("Rule::{:?} | text: '{:?}'", pair.as_rule(), pair.as_str())
-}
-
-fn debug_pairs(pairs: &Pairs<Rule>) -> () {
-    println!("[");
-    for inner in pairs.clone() {
-        debug_pair(&inner);
-    }
-    println!("]");
 }
 
 /*
