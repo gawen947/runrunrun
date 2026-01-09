@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0](https://github.com/gawen947/runrunrun/compare/v0.1.0...v0.2.0) (2026-01-09)
+
+
+### Features
+
+* import desktop files ([2971f93](https://github.com/gawen947/runrunrun/commit/2971f93749a9550566bd2affee6fe4b8e2e45efb))
+* only load required profile ([820e81b](https://github.com/gawen947/runrunrun/commit/820e81bc78abe694622372832354b0a44e09546a))
+* support tilde and env expansion in paths ([3fc2afb](https://github.com/gawen947/runrunrun/commit/3fc2afb55429b5d6b0a553971f8345b00f5ae973))
+
+
+### Bug Fixes
+
+* detect and avoid include loop ([a807eb1](https://github.com/gawen947/runrunrun/commit/a807eb12e5f5348fd2ad9b1162403ae841fcb9c4))
+* URL -&gt; URI ([4079632](https://github.com/gawen947/runrunrun/commit/407963207aa4e814f2660044fe40c15730479fe1))
+
 ## 0.1.0 (2026-01-04)
 
 
