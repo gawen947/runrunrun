@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -15,6 +19,7 @@ use crate::{
 };
 
 pub struct RrrBuilder {
+    loaded_config_files: HashSet<PathBuf>,
     profiles: HashMap<ProfileIdentifier, RuleSetBuilder>,
     current_profile: ProfileIdentifier,
     case_insensitive: bool,
@@ -53,17 +58,30 @@ impl RrrBuilder {
         Self {
             profiles,
             current_profile: "default".to_string(),
+            loaded_config_files: HashSet::new(),
             case_insensitive,
         }
     }
 
     // Parse a config file. Include are loaded recursively.
     pub fn config(mut self, file_path: &Path) -> Result<Self> {
-        let input = fs::read_to_string(file_path)?;
+        // ensure we always talk about the same absolute path
+        let file_path = file_path.canonicalize()?;
+
+        // avoid loading the same path twice
+        if self.loaded_config_files.contains(&file_path) {
+            return Ok(self);
+        }
+
+        // mark config file as visited
+        self.loaded_config_files.insert(file_path.clone());
+
+        // load config file
+        let input = fs::read_to_string(&file_path)?;
         let file = ConfigParser::parse(Rule::file, &input)?.next().unwrap();
         for inner in file.into_inner() {
             if inner.as_rule() == Rule::line {
-                self = self.parse_line(file_path, inner)?;
+                self = self.parse_line(&file_path, inner)?;
             }
         }
 
