@@ -147,7 +147,14 @@ impl RuleSetBuilder {
             }
         };
 
-        let Some(exec_cmd) = get_attr("Exec")?.map(|s| s.replace("%U", "%s")) else {
+        let Some(exec_cmd) = get_attr("Exec")?.map(|s| {
+            // Handle most common desktop flags. We still don't handle %i, %c, %k.
+            ["%U", "%u", "%F", "%f"]
+                .iter()
+                .fold(s.to_string(), |acc, format_specifier| {
+                    acc.replace(format_specifier, "%s")
+                })
+        }) else {
             return Ok(());
         };
         let Some(mime_types) = get_attr("MimeType")?.map(|s| s.to_string()) else {
