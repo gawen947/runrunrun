@@ -62,21 +62,21 @@ struct Args {
 fn process_input(args: &Args, sh: &Option<Vec<&str>>, rrr: &Rrr, input: &str) -> Result<()> {
     if let Some(rule) = rrr.profile(&args.profile)?.r#match(input) {
         debug!("matched rule for '{}': {:?}", input, rule);
-        let rule = rule
-            .prepare(input)
+        rule.prepare(input)
             .context("preparing the rule for execution")?;
+        let executed_action = rule.get_executed_action()?;
 
         if args.query {
-            println!("{}", rule.action);
+            println!("{}", executed_action);
         } else {
             if !args.dry_run {
                 info!(
                     "{} '{}'",
                     if args.fork { "fork-exec" } else { "exec" },
-                    rule.action
+                    executed_action
                 );
                 rule.exec(args.fork, sh)
-                    .with_context(|| format!("executing '{}'", rule.action))?;
+                    .with_context(|| format!("executing '{}'", executed_action))?;
             }
         }
     } else {

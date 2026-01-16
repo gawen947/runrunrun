@@ -1,5 +1,6 @@
 use std::{
-    borrow::Cow, collections::HashMap, os::unix::process::CommandExt, path::Path, process::Command,
+    cell::OnceCell, collections::HashMap, os::unix::process::CommandExt, path::Path,
+    process::Command,
 };
 
 use anyhow::{Result, anyhow, ensure};
@@ -7,23 +8,22 @@ use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use regex::{RegexBuilder, RegexSet, RegexSetBuilder};
 
 use crate::{
-    types::{Action, AliasIdentifier, ProfileIdentifier},
+    types::{ActionCommand, AliasIdentifier, ProfileIdentifier},
     utils,
 };
 
-#[derive(Debug)]
+/// Iteratively build and resolve rules.
 pub struct RuleSetBuilder {
     profile: ProfileIdentifier,
     case_insensitive: bool,
 
-    alias: HashMap<AliasIdentifier, Action>,
+    alias: HashMap<AliasIdentifier, ActionCommand>,
 
-    // fixme: this should be called regex_pattern and glob_pattern
     regex_rules: Vec<Rule>,
     glob_rules: Vec<Rule>,
 }
 
-#[derive(Debug)]
+/// Contains set of resolved rules that can be matched against an input.
 pub struct RuleSet {
     regex_set: RegexSet,
     glob_set: GlobSet,
@@ -31,33 +31,57 @@ pub struct RuleSet {
     builder: RuleSetBuilder,
 }
 
-#[derive(Clone, Debug)]
+/// Origin of the rule creation in the config.
+#[derive(Debug, Clone)]
 pub struct ConfigOrigin {
     pub file: String,
     pub line: usize,
     pub column: usize,
 }
 
-#[derive(Clone, Debug)]
+/// Specify if the rule was explicitely stated in config or created from an import.
+#[derive(Debug)]
 pub enum RuleOrigin {
-    Alias(AliasIdentifier),
-    ImportedDesktop(String),
-    Config,
+    Explicit,         // comes directly from the config
+    Imported(String), // created from an imported .desktop file
 }
 
-#[derive(Clone, Debug)]
+/// Pattern that this rule should match (left part of the rule).
+#[derive(Debug)]
 pub enum Pattern {
     Regex(String),
     Glob(String),
 }
 
-#[derive(Clone, Debug)]
+/// Type of action associated to the rule (right part of the rule).
+#[derive(Debug)]
+pub enum Action {
+    Alias(AliasIdentifier), // rule action references an alias
+    Command(ActionCommand), // rule action directly reference a command to execute
+}
+
+/**
+  A rule that map a matching pattern to an action.
+  If this action is an alias they must be resolved into an actual command.
+  Then the rule must be substituted with some input to prepare the actual command to be executed.
+  The rule_origin and config_origin specify what created this rule (explicit in config
+  or imported by ':import') and the place in the config that triggered this rule creation.
+*/
+#[derive(Debug)]
 pub struct Rule {
-    pub pattern: Pattern,
-    pub action: Action,
-    pub origin: RuleOrigin,
-    pub config_origin: ConfigOrigin,
+    pub pattern: Pattern, // pattern that should be matched (left side in config)
+    pub action: Action,   // action as specified in the config (right side in config)
+    pub resolved: OnceCell<ActionCommand>, // action with eventual alias resolved
+    pub execution: OnceCell<ActionCommand>, // action substituted and ready for execution
     pub case_insensitive: bool,
+
+    pub rule_origin: RuleOrigin, // where that rule was declared (explicit in config or created from import)
+    pub config_origin: ConfigOrigin, // which line in the config was at the origin of this rule
+}
+
+/// Resolve an Action (alias, command) into a action_command that can be executed.
+trait RuleResolver {
+    fn resolve<'a>(&'a self, action: &'a Action) -> Result<&'a str>;
 }
 
 impl RuleSetBuilder {
@@ -73,25 +97,25 @@ impl RuleSetBuilder {
     }
 
     /// Add an alias to the rule set. It can be recalled when you add a rule.
-    pub fn alias(&mut self, identifier: AliasIdentifier, action: Action) {
+    pub fn alias(&mut self, identifier: AliasIdentifier, action_command: ActionCommand) {
         // todo: accept &AliasIdentifier, &Action
-        self.alias.insert(identifier, action);
+        self.alias.insert(identifier, action_command);
     }
 
     /// Add a rule that comes from the config file directly with an action.
-    pub fn rule_with_action(
+    pub fn rule_with_command(
         &mut self,
         config_origin: ConfigOrigin,
         pattern: Pattern,
-        action: Action,
+        action_command: ActionCommand,
     ) -> () {
-        self.rule(Rule {
+        self.rule(
             pattern,
-            action,
+            Action::Command(action_command),
+            self.case_insensitive,
+            RuleOrigin::Explicit,
             config_origin,
-            origin: RuleOrigin::Config,
-            case_insensitive: self.case_insensitive,
-        });
+        );
     }
 
     /// Add a rule that comes from the config file and references an alias.
@@ -101,25 +125,13 @@ impl RuleSetBuilder {
         pattern: Pattern,
         alias_identifier: AliasIdentifier,
     ) -> Result<()> {
-        let action = self
-            .alias
-            .get(&alias_identifier)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Alias '{}' does not exist in profile '{}'",
-                    alias_identifier,
-                    self.profile
-                )
-            })?
-            .to_string();
-
-        self.rule(Rule {
+        self.rule(
             pattern,
-            action: action.to_string(),
+            Action::Alias(alias_identifier),
+            self.case_insensitive,
+            RuleOrigin::Explicit,
             config_origin,
-            origin: RuleOrigin::Alias(alias_identifier),
-            case_insensitive: self.case_insensitive,
-        });
+        );
 
         Ok(())
     }
@@ -166,15 +178,13 @@ impl RuleSetBuilder {
                 for extension in extensions {
                     let pattern = Pattern::Glob(format!("*.{}", extension));
 
-                    self.rule(Rule {
+                    self.rule(
                         pattern,
-                        action: exec_cmd.to_string(),
-                        config_origin: config_origin.clone(),
-                        origin: RuleOrigin::ImportedDesktop(
-                            imported_path.to_string_lossy().to_string(),
-                        ),
-                        case_insensitive: self.case_insensitive,
-                    })
+                        Action::Command(exec_cmd.to_string()),
+                        self.case_insensitive,
+                        RuleOrigin::Imported(imported_path.to_string_lossy().to_string()),
+                        config_origin.clone(),
+                    )
                 }
             }
         }
@@ -182,14 +192,42 @@ impl RuleSetBuilder {
         Ok(())
     }
 
-    fn rule(&mut self, rule: Rule) {
+    fn rule(
+        &mut self,
+        pattern: Pattern,
+        action: Action,
+        case_insensitive: bool,
+        rule_origin: RuleOrigin,
+        config_origin: ConfigOrigin,
+    ) {
+        let rule = Rule {
+            pattern,
+            action,
+            resolved: OnceCell::new(),
+            execution: OnceCell::new(),
+            case_insensitive,
+            rule_origin,
+            config_origin,
+        };
+
         match rule.pattern {
             Pattern::Regex(_) => self.regex_rules.push(rule),
             Pattern::Glob(_) => self.glob_rules.push(rule),
         }
     }
 
+    fn resolve(&self, rules: &[Rule]) -> Result<()> {
+        for rule in rules {
+            rule.resolve(self)?;
+        }
+        Ok(())
+    }
+
     pub fn build(mut self) -> Result<RuleSet> {
+        // resolve each rule (map alias to action)
+        self.resolve(&self.regex_rules)?;
+        self.resolve(&self.glob_rules)?;
+
         // reverse the patterns to match the last one first
         self.regex_rules.reverse();
         self.glob_rules.reverse();
@@ -221,8 +259,27 @@ impl RuleSetBuilder {
     }
 }
 
+impl RuleResolver for &RuleSetBuilder {
+    fn resolve<'a>(&'a self, action: &'a Action) -> Result<&'a str> {
+        match action {
+            Action::Command(action_command) => Ok(action_command),
+            Action::Alias(alias_identifier) => self
+                .alias
+                .get(alias_identifier)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Alias '{}' does not exist in profile '{}'",
+                        alias_identifier,
+                        self.profile
+                    )
+                })
+                .map(|s| s.as_str()),
+        }
+    }
+}
+
 impl RuleSet {
-    fn match_glob(&self, input: &str) -> Option<Rule> {
+    fn match_glob(&self, input: &str) -> Option<&Rule> {
         let matches = self.glob_set.matches(input);
 
         if let Some(index) = matches.first() {
@@ -230,15 +287,14 @@ impl RuleSet {
                 self.builder
                     .glob_rules
                     .get(*index)
-                    .expect("Glob first match gave a non existing index")
-                    .clone(),
+                    .expect("Glob first match gave a non existing index"),
             )
         } else {
             None
         }
     }
 
-    fn match_regex(&self, input: &str) -> Option<Rule> {
+    fn match_regex(&self, input: &str) -> Option<&Rule> {
         let matches: Vec<usize> = self.regex_set.matches(input).into_iter().collect();
 
         if let Some(index) = matches.first() {
@@ -246,8 +302,7 @@ impl RuleSet {
                 self.builder
                     .regex_rules
                     .get(*index)
-                    .expect("Regex first match gave a non existing index")
-                    .clone(),
+                    .expect("Regex first match gave a non existing index"),
             )
         } else {
             None
@@ -255,7 +310,7 @@ impl RuleSet {
     }
 
     /// Return the first glob or regex rule that matches the input.
-    pub fn r#match(&self, input: &str) -> Option<Rule> {
+    pub fn r#match(&self, input: &str) -> Option<&Rule> {
         if let r @ Some(_) = self.match_regex(input) {
             return r;
         }
@@ -273,39 +328,61 @@ impl Rule {
         }
     }
 
+    /// Map the action as orginally speicfied to an actual command to execute.
+    fn resolve(&self, resolver: impl RuleResolver) -> Result<()> {
+        let resolved_action = resolver.resolve(&self.action)?.to_string();
+        self.resolved
+            .set(resolved_action)
+            .expect("rule should not be already resolved");
+        Ok(())
+    }
+
+    pub fn is_executable(&self) -> bool {
+        self.execution.get().is_some()
+    }
+
+    pub fn get_executed_action(&self) -> Result<&str> {
+        Ok(self
+            .execution
+            .get()
+            .ok_or_else(|| anyhow!("Rule was not prepared for execution."))?)
+    }
+
     /// Substitute %s in the action with the input that we matched against
-    fn substitute_file(self, input: &str) -> Result<Self> {
+    fn substitute_file(action: String, input: &str) -> Result<String> {
         // automatically append "%s" if not present
-        let action = if self.action.contains("%s") {
-            Cow::Borrowed(&self.action)
+        let action_with_tag = if action.contains("%s") {
+            action
         } else {
-            Cow::Owned(format!("{} %s", self.action))
+            format!("{} %s", action)
         };
 
         // replace with the matched input
-        let action = action.replace("%s", &utils::quote(input)?);
+        let action_with_input = action_with_tag.replace("%s", &utils::quote(input)?);
 
-        Ok(Self { action, ..self })
+        Ok(action_with_input)
     }
 
     /// Substitute in the action the captures of the Regex with %1, %2, %3, ...
-    fn substitute_captures(self, captures: Vec<String>) -> Result<Self> {
-        let mut result = self.action.to_string();
-
+    fn substitute_captures(mut action: String, captures: Vec<String>) -> Result<String> {
         for (i, capture) in captures.iter().enumerate() {
             let tag = format!("%{}", i + 1); // %1, %2, %3, ...
-            result = result.replace(&tag, &utils::quote(capture)?)
+            action = action.replace(&tag, &utils::quote(capture)?)
         }
 
-        Ok(Self {
-            action: result,
-            ..self
-        })
+        Ok(action)
     }
 
     /// Substitute in the action the input that we matched against and the captures of the Regex.
-    fn substitute(self, captures: Vec<String>, input: &str) -> Result<Self> {
-        Ok(self.substitute_captures(captures)?.substitute_file(input)?)
+    fn substitute(&self, captures: Vec<String>, input: &str) -> Result<()> {
+        let resolved_action = self.resolved.get().expect("rule must be resolved");
+
+        let executable_action = Self::substitute_captures(resolved_action.to_string(), captures)?;
+        let executable_action = Self::substitute_file(executable_action, input)?;
+        self.execution
+            .set(executable_action)
+            .expect("rule should not be ready for execution");
+        Ok(())
     }
 
     /// Cature the matched regex group into a vector.
@@ -333,15 +410,20 @@ impl Rule {
     }
 
     /// Prepare the rule for execution with proper substitution against the matched file.
-    pub fn prepare(self, input: &str) -> Result<Self> {
+    pub fn prepare(&self, input: &str) -> Result<()> {
         let captures = self.captures(input)?;
-        Ok(self.substitute(captures, input)?)
+        self.substitute(captures, input)?;
+        Ok(())
     }
 
     /// Execute the rule action as a shell command (only returns if there was an error)
     pub fn exec(&self, fork: bool, sh: &Option<Vec<&str>>) -> Result<()> {
         let default_shell = vec!["sh", "-c"];
         let shell = sh.as_ref().unwrap_or(&default_shell);
+        let command_to_execute = self
+            .execution
+            .get()
+            .ok_or_else(|| anyhow!("Rule not prepared for execution"))?;
 
         ensure!(
             shell.len() > 0,
@@ -349,7 +431,7 @@ impl Rule {
         );
 
         let mut cmd = Command::new(shell[0]);
-        cmd.args(&shell[1..]).arg(&self.action);
+        cmd.args(&shell[1..]).arg(command_to_execute);
 
         if fork {
             Ok(cmd.spawn().map(|_| ())?)

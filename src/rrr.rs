@@ -259,7 +259,7 @@ impl RrrBuilder {
             rule_set_builder.rule_with_alias(config_origin, pattern, alias_identifier)?;
         } else {
             let action = parse_string(target)?;
-            rule_set_builder.rule_with_action(config_origin, pattern, action);
+            rule_set_builder.rule_with_command(config_origin, pattern, action);
         }
         drop(rule_set_builder);
 
