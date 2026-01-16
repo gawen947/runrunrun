@@ -1,5 +1,8 @@
 use std::{
-    cell::OnceCell, collections::HashMap, os::unix::process::CommandExt, path::Path,
+    cell::OnceCell,
+    collections::HashMap,
+    os::unix::process::{CommandExt, ExitStatusExt},
+    path::Path,
     process::Command,
 };
 
@@ -82,6 +85,14 @@ pub struct Rule {
 /// Resolve an Action (alias, command) into a action_command that can be executed.
 trait RuleResolver {
     fn resolve<'a>(&'a self, action: &'a Action) -> Result<&'a str>;
+}
+
+/// Specify how a matching rule should be executed.
+pub enum ExecutionType {
+    Exec,                // spanwed process will replace RRR
+    Fork,                // fork and let it be, no matter the result
+    WaitSuccess,         // fork and wait for the process to return successfully
+    WaitSuccessSignalOk, // same as WaitSuccess but being killed by a singal is considered success
 }
 
 impl RuleSetBuilder {
@@ -279,6 +290,28 @@ impl RuleResolver for &RuleSetBuilder {
 }
 
 impl RuleSet {
+    pub fn matches_glob(&self, input: &str) -> impl Iterator<Item = &Rule> + '_ {
+        self.glob_set.matches(input).into_iter().map(|index| {
+            self.builder
+                .glob_rules
+                .get(index)
+                .expect("Glob matches gave a non existing index")
+        })
+    }
+
+    pub fn matches_regex(&self, input: &str) -> impl Iterator<Item = &Rule> + '_ {
+        self.regex_set.matches(input).into_iter().map(|index| {
+            self.builder
+                .regex_rules
+                .get(index)
+                .expect("Regex matches gave a non existing index")
+        })
+    }
+
+    pub fn matches(&self, input: &str) -> impl Iterator<Item = &Rule> + '_ {
+        self.matches_regex(input).chain(self.matches_glob(input))
+    }
+
     fn match_glob(&self, input: &str) -> Option<&Rule> {
         let matches = self.glob_set.matches(input);
 
@@ -417,7 +450,7 @@ impl Rule {
     }
 
     /// Execute the rule action as a shell command (only returns if there was an error)
-    pub fn exec(&self, fork: bool, sh: &Option<Vec<&str>>) -> Result<()> {
+    pub fn exec(&self, execution_type: ExecutionType, sh: &Option<Vec<&str>>) -> Result<()> {
         let default_shell = vec!["sh", "-c"];
         let shell = sh.as_ref().unwrap_or(&default_shell);
         let command_to_execute = self
@@ -433,10 +466,34 @@ impl Rule {
         let mut cmd = Command::new(shell[0]);
         cmd.args(&shell[1..]).arg(command_to_execute);
 
-        if fork {
-            Ok(cmd.spawn().map(|_| ())?)
-        } else {
-            Err(cmd.exec())?
+        let mut wait_success = |ignore_signals: bool| -> Result<()> {
+            let mut child = cmd.spawn()?;
+            let status = child.wait()?;
+            if status.success() {
+                Ok(())
+            } else {
+                if let Some(signal) = status.signal() {
+                    if ignore_signals {
+                        Ok(())
+                    } else {
+                        Err(anyhow!("process killed by signal {}", signal))
+                    }
+                } else {
+                    Err(anyhow!(
+                        "process exited with code {}",
+                        status
+                            .code()
+                            .expect("not killed by signal => code must exist")
+                    ))
+                }
+            }
+        };
+
+        match execution_type {
+            ExecutionType::Exec => Err(cmd.exec())?,
+            ExecutionType::Fork => Ok(cmd.spawn().map(|_| ())?),
+            ExecutionType::WaitSuccess => wait_success(false),
+            ExecutionType::WaitSuccessSignalOk => wait_success(true),
         }
     }
 }

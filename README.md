@@ -89,6 +89,23 @@ The `:import` directive loads `.desktop` files and automatically generates match
 :import /usr/local/share/applications
 ```
 
+### Fallback
+
+When enabled with `-f`, `--fallback`, or `RRR_FALLBACK=true`, failed commands automatically try the previous matching rule. This is useful when programs may not be installed on all systems—rules can cascade from preferred to fallback applications until one succeeds.
+
+```
+https://*    lynx
+https://*    chromium
+https://*    firefox
+```
+
+```
+# Try firefox, then chromium, then lynx until one succeeds
+rrr -f https://example.com
+```
+
+A command is considered successful unless it exits with a non-zero status. Programs terminated by signals (like Ctrl+C) are treated as successful and won't trigger fallback.
+
 ## Usage
 
 ```bash

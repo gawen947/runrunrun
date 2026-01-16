@@ -1,4 +1,4 @@
 pub mod rrr;
-mod rule_set;
+pub mod rule_set;
 mod types;
 mod utils;

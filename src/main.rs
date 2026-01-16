@@ -8,7 +8,10 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use log::{debug, error, info, warn};
-use runrunrun::rrr::{Rrr, RrrBuilder};
+use runrunrun::{
+    rrr::{Rrr, RrrBuilder},
+    rule_set::{ExecutionType, Rule},
+};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -50,6 +53,15 @@ struct Args {
     #[arg(short = 'F', long = "fork")]
     fork: bool,
 
+    /// On execution failure, try the previous matching rule until one succeeds
+    #[arg(
+        short = 'f',
+        long = "fallback",
+        env = "RRR_FALLBACK",
+        default_value = "false"
+    )]
+    fallback: bool,
+
     /// Change the default shell used to execute actions to another command
     #[arg(long = "sh", env = "RRR_SHELL")]
     sh: Option<String>,
@@ -59,27 +71,112 @@ struct Args {
     inputs: Vec<String>,
 }
 
-fn process_input(args: &Args, sh: &Option<Vec<&str>>, rrr: &Rrr, input: &str) -> Result<()> {
-    if let Some(rule) = rrr.profile(&args.profile)?.r#match(input) {
-        debug!("matched rule for '{}': {:?}", input, rule);
-        rule.prepare(input)
-            .context("preparing the rule for execution")?;
-        let executed_action = rule.get_executed_action()?;
+/*
+  Represents the result of a rule execution, and if execution happened.
+  We need a way to treat errors in the execution of rules separately
+  and this struct makes code that treat execution errors clearer.
+*/
+struct ExecutionResult(Option<Result<()>>);
 
-        if args.query {
-            println!("{}", executed_action);
-        } else {
-            if !args.dry_run {
-                info!(
-                    "{} '{}'",
-                    if args.fork { "fork-exec" } else { "exec" },
-                    executed_action
-                );
-                rule.exec(args.fork, sh)
-                    .with_context(|| format!("executing '{}'", executed_action))?;
-            }
-        }
+impl ExecutionResult {
+    fn no_execution() -> Self {
+        ExecutionResult(None)
+    }
+
+    fn with_execution(result: Result<()>) -> Self {
+        ExecutionResult(Some(result))
+    }
+
+    fn execution_result(self) -> Result<()> {
+        self.0.unwrap_or(Ok(()))
+    }
+}
+
+fn process_rule(
+    args: &Args,
+    sh: &Option<Vec<&str>>,
+    input: &str,
+    rule: &Rule,
+) -> Result<ExecutionResult> {
+    debug!("matched rule for '{}': {:?}", input, rule);
+    rule.prepare(input)
+        .context("preparing the rule for execution")?;
+    let executed_action = rule.get_executed_action()?;
+
+    if args.query {
+        println!("{}", executed_action);
     } else {
+        if !args.dry_run {
+            info!(
+                "{} '{}'",
+                if args.fork { "fork-exec" } else { "exec" },
+                executed_action
+            );
+
+            let execution_type = if args.fallback {
+                ExecutionType::WaitSuccessSignalOk
+            } else if args.fork {
+                ExecutionType::Fork
+            } else {
+                ExecutionType::Exec
+            };
+
+            let result = rule
+                .exec(execution_type, sh)
+                .with_context(|| format!("executing '{}'", executed_action));
+
+            return Ok(ExecutionResult::with_execution(result));
+        }
+    }
+
+    Ok(ExecutionResult::no_execution())
+}
+
+fn process_input(args: &Args, sh: &Option<Vec<&str>>, rrr: &Rrr, input: &str) -> Result<()> {
+    if args.fallback {
+        process_input_with_fallback(args, sh, rrr, input)
+    } else {
+        process_input_without_fallback(args, sh, rrr, input)
+    }
+}
+
+fn process_input_without_fallback(
+    args: &Args,
+    sh: &Option<Vec<&str>>,
+    rrr: &Rrr,
+    input: &str,
+) -> Result<()> {
+    if let Some(rule) = rrr.profile(&args.profile)?.r#match(input) {
+        process_rule(args, sh, input, rule)?.execution_result()?;
+    } else {
+        warn!("no match for '{}'", input);
+    }
+
+    Ok(())
+}
+
+fn process_input_with_fallback(
+    args: &Args,
+    sh: &Option<Vec<&str>>,
+    rrr: &Rrr,
+    input: &str,
+) -> Result<()> {
+    let matches = rrr.profile(&args.profile)?.matches(input);
+
+    let mut match_found = false;
+    for rule in matches {
+        match_found = true;
+        match process_rule(args, sh, input, rule)?.0 {
+            Some(Ok(())) => return Ok(()), // match found and executed correctly
+            Some(Err(e)) => {
+                // match found but execution resulted in an error
+                info!("execution failed (continuing with next match): {:?}", e);
+            }
+            None => {} // nothing executed (dry-run or query) => proceed with other matches
+        }
+    }
+
+    if !match_found {
         warn!("no match for '{}'", input);
     }
 
