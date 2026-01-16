@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/gawen947/runrunrun/compare/v0.2.0...v0.3.0) (2026-01-16)
+
+
+### Features
+
+* add option to fallback when executed command fails ([f852b79](https://github.com/gawen947/runrunrun/commit/f852b7951f8463f53f1cb3a28ee4361b37789679))
+* alias redefinition update previous references ([5692bbc](https://github.com/gawen947/runrunrun/commit/5692bbc45f666fc7d19667a6745dc5c82393f195))
+
+
+### Bug Fixes
+
+* support desktop files format specifiers ([45de6bc](https://github.com/gawen947/runrunrun/commit/45de6bc899e03073287c93032d794544d9a1c6e4))
+
 ## [0.2.0](https://github.com/gawen947/runrunrun/compare/v0.1.0...v0.2.0) (2026-01-09)
 
 
